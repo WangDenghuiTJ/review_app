@@ -188,15 +188,6 @@ $review-flow
 6. Keep `.context.md` updated so thread-level replies stay aligned with your intent.
 7. Export PDF or PDF+comments when you need a shareable artifact.
 
-## Public Repo Checklist
-
-Before making your own instance public, verify that you are not exposing real working material:
-
-- remove real business or research content from `.md`
-- remove real discussions from `.comments.json`
-- remove sensitive intent or constraints from `.context.md`
-- check session notes or internal runbooks for private references
-
 ## Positioning
 
 A short way to describe Redraft:
@@ -206,3 +197,7 @@ A short way to describe Redraft:
 A Codex-specific version:
 
 > **Redraft helps you review, revise, and steer Codex-written documents like real documents, not chat dumps.**
+
+## License
+
+MIT. See [LICENSE](./LICENSE).
