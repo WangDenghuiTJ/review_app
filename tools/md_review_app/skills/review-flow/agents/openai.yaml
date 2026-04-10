@@ -1,0 +1,4 @@
+interface:
+  display_name: "Review Flow"
+  short_description: "Draft in Review App, maintain context, revise, then execute."
+  default_prompt: "Use $review-flow to write or revise long documents in MT Review App, import external Markdown into the workspace when needed, maintain the sibling .context.md when background context matters, automatically ensure the local Review App service is running, return the direct review link, and execute only after approval."

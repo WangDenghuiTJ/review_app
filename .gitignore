@@ -1,0 +1,8 @@
+logs/
+tmp/
+__pycache__/
+*.pyc
+*.pyo
+*.log
+.DS_Store
+tools/md_review_app/backups/

@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Markdown Review</title>
+    <link rel="stylesheet" href="./vendor/toastui-editor.css?v=toastui-20260409-27" />
+    <link rel="stylesheet" href="./styles.css?v=toastui-20260409-27" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="file-controls">
+          <label for="filePath">Markdown 文件</label>
+          <input id="filePath" type="text" value="workflow_review.md" spellcheck="false" />
+          <button id="loadBtn" type="button">加载</button>
+          <button id="saveMdBtn" type="button">保存 Markdown</button>
+          <button id="addCommentBtn" class="secondary" type="button">批注当前选区/段落</button>
+          <button id="reloadRemoteBtn" class="ghost" type="button">加载远端正文</button>
+          <button id="saveCommentsBtn" type="button">保存批注</button>
+          <button id="editContextBtn" class="ghost" type="button">上下文摘要</button>
+          <button id="exportPdfBtn" class="ghost" type="button">导出 PDF</button>
+          <button id="exportPdfWithCommentsBtn" class="ghost" type="button">导出 PDF+批注</button>
+          <button id="approveCloseBtn" class="secondary" type="button">确认通过并关闭</button>
+        </div>
+        <div class="status" id="statusText">准备就绪</div>
+      </header>
+
+      <main class="workspace">
+        <section class="view-mode-panel" aria-label="正文视图模式">
+          <div class="view-mode-buttons" role="tablist" aria-label="正文视图模式">
+            <button id="modeEditBtn" class="secondary mode-btn is-active" type="button" aria-pressed="true">干净模式</button>
+            <button id="modeRevisionBtn" class="secondary mode-btn" type="button" aria-pressed="false">编辑审阅</button>
+            <button id="resetRevisionBtn" class="ghost" type="button">以当前版本为基线</button>
+          </div>
+          <div class="view-mode-side">
+            <div class="view-mode-hint" id="viewModeHint">当前处于干净模式，正文可直接修改和批注。</div>
+            <div class="view-mode-summary" id="previewSummary">当前不显示修订痕迹。</div>
+          </div>
+        </section>
+
+        <section class="editor-panel">
+          <div class="panel-header">
+            <div>
+              <h1>Markdown 审阅稿</h1>
+              <p>默认进入 WYSIWYG 单栏审阅，正文直接按渲染效果编辑；需要源码时，再切到 Markdown。</p>
+            </div>
+            <div class="pill-group">
+              <span class="pill" id="fileInfo">未加载文件</span>
+              <span class="pill" id="editorModeInfo">WYSIWYG</span>
+              <span class="pill" id="markdownStateInfo">正文已同步</span>
+              <span class="pill" id="commentCount">0 个线程</span>
+              <span class="pill" id="contextStateInfo">上下文未配置</span>
+              <span class="pill" id="reviewStateInfo">审阅中</span>
+            </div>
+          </div>
+
+          <div class="editor-shell">
+            <div class="review-stage">
+              <div class="editor-stage">
+                <div class="editor-note">
+                  默认直接在渲染后的正文里编辑和选区批注；如果没有选区，就会对当前光标所在段落或当前行添加批注。开启“编辑审阅”后，修订痕迹会叠在同一个编辑区里，底下正文仍可继续编辑。
+                </div>
+                <section id="previewPanel" class="preview-panel is-hidden" aria-live="polite">
+                  <div id="previewScroll" class="preview-scroll">
+                    <div id="revisionPreviewRoot" class="preview-root revision-document"></div>
+                  </div>
+                </section>
+                <div id="editorRoot" class="editor-root"></div>
+              </div>
+
+              <aside class="comment-rail">
+                <div class="comment-rail-header">
+                  <div>
+                    <h2>页边批注</h2>
+                    <p>只显示当前视窗附近的线程，优先和正文位置对齐。</p>
+                  </div>
+                  <div class="sidebar-controls">
+                    <button id="requestAllBtn" class="secondary" type="button">标记全部待处理</button>
+                    <button id="copyPendingBtn" class="secondary" type="button">复制待处理</button>
+                    <button id="notifyBtn" class="ghost" type="button">开启提醒</button>
+                  </div>
+                </div>
+
+                <div class="sidebar-toolbar">
+                  <div class="thread-summary" id="threadSummary">0 待处理 · 0 进行中 · 0 已解决</div>
+                  <div class="thread-toolbar-actions">
+                    <div class="thread-visibility-controls">
+                      <button id="showResolvedBtn" class="ghost filter-btn" type="button">展开所有标注</button>
+                      <button id="hideResolvedBtn" class="ghost filter-btn" type="button">隐藏所有已解决批注</button>
+                    </div>
+                    <div class="thread-filters" role="tablist" aria-label="线程筛选">
+                      <button id="filterAllBtn" class="ghost filter-btn is-active" type="button" aria-pressed="true">全部</button>
+                      <button id="filterPendingBtn" class="ghost filter-btn" type="button" aria-pressed="false">待处理</button>
+                      <button id="filterOpenBtn" class="ghost filter-btn" type="button" aria-pressed="false">进行中</button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="comment-list" id="commentList"></div>
+              </aside>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="printExportRoot" class="print-export-root" aria-hidden="true"></div>
+
+    <dialog id="commentDialog">
+      <form method="dialog" class="comment-form">
+        <h3 id="dialogTitle">添加批注</h3>
+        <div class="quote-box">
+          <div class="quote-label">原文定位</div>
+          <pre id="dialogQuote"></pre>
+        </div>
+        <label for="commentAuthor">姓名</label>
+        <input id="commentAuthor" type="text" value="用户" />
+        <label for="commentBody">批注内容</label>
+        <textarea id="commentBody" rows="5" placeholder="输入你的批注"></textarea>
+        <div class="dialog-actions">
+          <button value="cancel" type="submit">取消</button>
+          <button value="confirm" id="confirmCommentBtn" type="submit">保存批注</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="replyDialog">
+      <form method="dialog" class="comment-form">
+        <h3 id="replyDialogTitle">回复线程</h3>
+        <div class="quote-box">
+          <div class="quote-label">线程定位</div>
+          <pre id="replyDialogQuote"></pre>
+        </div>
+        <label for="replyAuthor">姓名</label>
+        <input id="replyAuthor" type="text" value="用户" />
+        <label for="replyBody">回复内容</label>
+        <textarea id="replyBody" rows="5" placeholder="输入回复"></textarea>
+        <div class="dialog-actions">
+          <button value="cancel" type="submit">取消</button>
+          <button value="confirm" type="submit">保存回复</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="contextDialog">
+      <form method="dialog" class="comment-form context-form">
+        <h3>文档上下文摘要</h3>
+        <div class="quote-box">
+          <div class="quote-label">用途</div>
+          <pre id="contextDialogHint">这份摘要会保存到同名 .context.md，并在“呼唤智能体”回复单条批注时一并注入。</pre>
+        </div>
+        <label for="contextBody">上下文内容</label>
+        <textarea id="contextBody" class="context-textarea" rows="14" placeholder="例如：用户目标、已确认约束、已否决方案、回复批注时的口径。"></textarea>
+        <div class="dialog-actions">
+          <button value="cancel" type="submit">取消</button>
+          <button value="confirm" type="submit">保存摘要</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script src="./vendor/toastui-editor.js?v=toastui-20260409-27"></script>
+    <script type="module" src="./app.js?v=toastui-20260409-27"></script>
+  </body>
+</html>
