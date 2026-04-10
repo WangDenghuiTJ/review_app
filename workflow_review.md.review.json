@@ -1,9 +1,14 @@
 {
   "version": 1,
-  "updatedAt": "2026-04-09T09:03:44.061090+00:00",
-  "status": "approved",
-  "closedAt": "2026-04-09T09:03:44.061096+00:00",
-  "closedBy": "用户",
-  "note": "test-complete",
-  "threadCounts": null
+  "updatedAt": "2026-04-10T00:00:00+00:00",
+  "status": "in_review",
+  "closedAt": null,
+  "closedBy": null,
+  "note": "Public demo review state.",
+  "threadCounts": {
+    "pending": 1,
+    "open": 1,
+    "resolved": 1,
+    "unresolved": 2
+  }
 }
