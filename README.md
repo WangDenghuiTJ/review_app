@@ -1,116 +1,206 @@
-# Review App
+# Redraft
 
-一个本地运行的 Markdown 审阅工具，核心目标是把“写文档、加批注、单线程呼唤智能体、必要时直接改原文”这条链路做成可重复使用的本地工作流。
+**Interactive review for AI-written Markdown.**
 
-这个仓库已经过公开示例清理：
+Redraft is a local-first review workspace for plans, specs, papers, and other long-form Markdown written with AI.
 
-- 根目录里的 `workflow_review.md` 是公开演示文档
-- 对应的 `.comments.json`、`.context.md`、`.review.json` 也是公开示例
-- 不包含真实项目正文或私人审阅记录
+It adds the missing review layer that chat-based agent workflows usually lack:
 
-## 功能
+- inline revision marks instead of silent rewrites
+- comment threads attached to exact ranges or paragraphs
+- thread-level agent actions instead of "rewrite the whole thing"
+- document-level context that keeps agent replies aligned with your real intent
 
-- 直接加载和编辑 Markdown
-- 针对选区或段落创建批注线程
-- 在线程里人工回复
-- 在线程里点击“呼唤智能体”
-- 智能体只处理当前线程，但会读取：
-  - 当前 Markdown 正文
-  - 当前线程历史
-  - 同名 `.context.md`
-- 如果线程明确要求改原文，智能体可以直接修改当前 Markdown
-- 编辑审阅模式支持显示相对基线的修订痕迹
-- 支持导出 PDF 和 PDF+批注
+The current backend is optimized for `Codex`, including per-thread agent calls and optional direct Markdown edits. The review model itself is broader: the app is designed as an interactive review layer for AI-generated documents, not as a one-off Markdown editor.
 
-## 仓库结构
+## Why This Exists
+
+When Codex or another agent writes a plan in chat, the output is usually hard to review well:
+
+- you cannot approve a long plan paragraph by paragraph
+- you cannot ask for a change on one sentence without re-running the whole document flow
+- you often lose visible edit history when the agent rewrites text
+- comment-driven iteration is awkward in a chat window
+
+Redraft turns that workflow into a real document review loop:
+
+1. generate a draft with an agent
+2. open it as Markdown in Redraft
+3. comment on exact sections
+4. ask the agent to answer one thread or directly revise one passage
+5. keep revision traces visible while you decide what to keep
+
+## What It Is Good For
+
+Redraft is especially useful for:
+
+- project plans and execution roadmaps
+- technical design docs and architecture writeups
+- PRDs, SOPs, and operating documents
+- papers, abstracts, and manuscript polishing
+- application materials, proposals, and long-form memos
+- any workflow where AI helps write, but a human still needs to review and steer
+
+A strong pattern is: **draft broadly with AI, then refine locally with threaded review**.
+
+## Core Workflow
+
+Redraft is built around a simple unit of collaboration: **one comment thread, one focused change request**.
+
+- load a Markdown document
+- create a thread on a selected range or paragraph
+- reply manually, or click `呼唤智能体` on that thread
+- inject document context from a sibling `.context.md`
+- let the agent answer only that thread
+- if the thread explicitly asks to rewrite text, let the agent directly edit the Markdown
+- inspect the result in review mode with visible revision traces
+
+This keeps the agent scoped, predictable, and easier to supervise.
+
+## What Makes It Different
+
+### 1. Review Instead of Rewrite
+
+Most AI writing tools optimize for "generate again".  
+Redraft optimizes for **review, steer, and accept changes deliberately**.
+
+### 2. Thread-Level Agent Calls
+
+You do not need to hand the whole document back to the model every time.  
+You can ask for a fix, translation, polish, clarification, or rewrite on one specific thread.
+
+### 3. Revision Visibility
+
+When the agent edits the original Markdown, the app can still show revision traces in review mode instead of replacing the text invisibly.
+
+### 4. Local-First Files
+
+The source of truth stays on disk:
+
+- `doc.md`
+- `doc.md.comments.json`
+- `doc.md.context.md`
+- `doc.md.review.json`
+
+This makes the workflow easy to inspect, back up, diff, and integrate with your own tooling.
+
+## Codex Integration
+
+This repo currently ships with a working `Codex`-backed thread agent flow.
+
+Inside a thread, the app can send Codex:
+
+- the current Markdown document
+- the current thread history
+- the document-level `.context.md` summary
+
+Codex then returns a reply for that thread and, when explicitly instructed, can directly modify the Markdown file itself.
+
+This makes the app a strong fit for users who already use Codex to draft:
+
+- implementation plans
+- research plans
+- design docs
+- polished internal docs
+- manuscript sections
+
+## Repository Structure
 
 - `tools/md_review_app/`
-  Review App 前端与服务端源码
+  Frontend and local HTTP server.
 - `scripts/`
-  启动、停止、生成直达链接等辅助脚本
+  Start, stop, foreground serve, and direct-link helpers.
 - `workflow_review.md`
-  默认演示文档
+  Public demo document.
 - `workflow_review.md.comments.json`
-  默认演示批注
+  Public demo comment threads.
 - `workflow_review.md.context.md`
-  默认演示上下文摘要
+  Public demo context summary.
 
-## 本地启动
+## Quick Start
 
-先进入仓库根目录：
+From the repo root:
 
 ```bash
 cd /path/to/review_app
-```
-
-再执行：
-
-```bash
 ./scripts/start_review_app.sh 127.0.0.1 8765 workflow_review.md
 ```
 
-如果你只是想前台运行服务：
-
-```bash
-./scripts/serve_review_app_foreground.sh
-```
-
-默认打开地址：
+Then open:
 
 ```text
 http://127.0.0.1:8765/?path=workflow_review.md
 ```
 
-## 安装到自己的 Codex
+If you want to keep the server in the foreground:
 
-这个仓库里带了一份 `review-flow` skill，可安装到你自己的全局 Codex skills 目录。
+```bash
+./scripts/serve_review_app_foreground.sh
+```
 
-### 方式 1：直接运行安装脚本
+## Install the Codex Skill
+
+This repo includes a `review-flow` skill for Codex.  
+It routes long plans, docs, and reviewable writing into the app instead of leaving them in chat.
+
+### Install via script
 
 ```bash
 cd /path/to/review_app/tools/md_review_app
 ./scripts/install-review-flow-global.sh
 ```
 
-默认会安装到：
+Default install target:
 
 ```text
 $HOME/.codex/skills/review-flow
 ```
 
-安装完成后，在新的 Codex 会话里就可以直接使用：
+### Install manually
 
-```text
-$review-flow
-```
-
-### 方式 2：手动复制
-
-把下面这个目录复制到你自己的全局 skills 目录：
+Copy:
 
 ```text
 tools/md_review_app/skills/review-flow
 ```
 
-目标位置通常是：
+To:
 
 ```text
 $HOME/.codex/skills/review-flow
 ```
 
-## 推荐使用方式
+After that, a new Codex session can use:
 
-1. 把你的 Markdown 放进 Review App 工作区。
-2. 启动本地服务并打开直达链接。
-3. 在网页里批注。
-4. 单线程问题用“呼唤智能体”处理。
-5. 大规模规划、回写、定稿执行则用 `$review-flow`。
+```text
+$review-flow
+```
 
-## 公开仓库提示
+## Recommended Usage Pattern
 
-如果你准备把自己的实例设为公开仓库，建议先检查：
+1. Ask Codex to draft a plan, spec, paper section, or long document.
+2. Move the Markdown into this workspace.
+3. Open it in Redraft.
+4. Review with comment threads.
+5. Use `呼唤智能体` only where targeted changes are needed.
+6. Keep `.context.md` updated so thread-level replies stay aligned with your intent.
+7. Export PDF or PDF+comments when you need a shareable artifact.
 
-- 示例 Markdown 是否仍包含真实业务内容
-- `.comments.json` 是否仍保留真实讨论
-- `.context.md` 是否泄露真实目标或约束
-- `NEXT_SESSION_SUMMARY.md` 之类的说明文件是否仍带私人会话背景
+## Public Repo Checklist
+
+Before making your own instance public, verify that you are not exposing real working material:
+
+- remove real business or research content from `.md`
+- remove real discussions from `.comments.json`
+- remove sensitive intent or constraints from `.context.md`
+- check session notes or internal runbooks for private references
+
+## Positioning
+
+A short way to describe Redraft:
+
+> **Redraft is the missing review layer for AI-written Markdown.**
+
+A Codex-specific version:
+
+> **Redraft helps you review, revise, and steer Codex-written documents like real documents, not chat dumps.**
