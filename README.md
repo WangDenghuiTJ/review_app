@@ -1,5 +1,7 @@
 # Redraft
 
+[English](./README.md) | [简体中文](./README.zh-CN.md)
+
 **Interactive review for AI-written Markdown.**
 
 Redraft is a local-first review workspace for plans, specs, papers, and other long-form Markdown written with AI.
