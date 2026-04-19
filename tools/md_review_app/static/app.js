@@ -10,6 +10,7 @@ const state = {
   contextPath: "",
   contextUpdatedAt: null,
   activeCommentId: null,
+  floatingCommentId: null,
   expandedCommentId: null,
   pendingAnchor: null,
   pendingReplyThreadId: null,
@@ -104,6 +105,8 @@ const outlineSectionResizeHandle = document.getElementById("outlineSectionResize
 const commentResizeHandle = document.getElementById("commentResizeHandle");
 const commentList = document.getElementById("commentList");
 const commentConnectorLayer = document.getElementById("commentConnectorLayer");
+const floatingCommentOverlay = document.getElementById("floatingCommentOverlay");
+const floatingCommentCardHost = document.getElementById("floatingCommentCardHost");
 const showResolvedBtn = document.getElementById("showResolvedBtn");
 const hideResolvedBtn = document.getElementById("hideResolvedBtn");
 const commentDialog = document.getElementById("commentDialog");
@@ -2753,6 +2756,18 @@ function updateResolvedVisibilityButtons() {
   hideResolvedBtn.disabled = !state.showResolvedThreads;
 }
 
+function getThreadById(threadId) {
+  return state.comments.find((item) => item.id === threadId) || null;
+}
+
+function captureThreadMessageScrollState(root, targetMap) {
+  if (!(root instanceof HTMLElement)) return;
+  root.querySelectorAll(".thread-card .thread-messages").forEach((node) => {
+    const threadId = node.dataset.threadId;
+    if (threadId) targetMap.set(threadId, node.scrollTop);
+  });
+}
+
 async function copyText(text) {
   if (navigator.clipboard?.writeText) {
     await navigator.clipboard.writeText(text);
@@ -2873,67 +2888,117 @@ function getAssistantBadge(thread) {
   return '<span class="assistant-pill idle">未标记</span>';
 }
 
-function renderComments() {
-  const nextScrollState = new Map();
-  commentList.querySelectorAll(".thread-card .thread-messages").forEach((node) => {
-    const threadId = node.dataset.threadId;
-    if (threadId) nextScrollState.set(threadId, node.scrollTop);
-  });
-  commentMessageScrollState = nextScrollState;
-  commentList.innerHTML = "";
-  const counts = getThreadCounts();
-  const visibleThreads = getVisibleThreads();
+function getThreadStatusLabel(thread) {
+  return thread.status === "resolved" ? "已解决" : "进行中";
+}
 
-  commentCount.textContent = visibleThreads.length === state.comments.length
-    ? `${state.comments.length} 个线程`
-    : `${visibleThreads.length} / ${state.comments.length} 个线程`;
-  if (reviewStateInfo) {
-    reviewStateInfo.textContent = formatReviewState(state.reviewState);
+function getThreadToggleLabel(thread, options = {}) {
+  if (thread.status === "resolved") {
+    return options.floating ? "恢复" : "重新打开";
   }
-  if (requestAllBtn) requestAllBtn.disabled = counts.unresolved === 0;
-  if (copyPendingBtn) copyPendingBtn.disabled = counts.pending === 0;
-  showResolvedBtn.textContent = `展开所有标注 (${state.comments.length})`;
-  hideResolvedBtn.textContent = `隐藏已解决批注 (${counts.resolved})`;
-  updateResolvedVisibilityButtons();
+  return options.floating ? "标注为已解决" : "标记已解决";
+}
 
-  if (!visibleThreads.length) {
-    const empty = document.createElement("div");
-    empty.className = "empty-state";
-    empty.textContent = state.comments.length
-      ? (state.showResolvedThreads ? "当前筛选条件下没有线程。" : "当前没有可见线程。已解决批注已隐藏，可点“展开所有标注”查看历史。")
-      : "还没有批注线程。先在编辑器里选中文字，再点“批注当前选区”。";
-    commentList.appendChild(empty);
-    return;
+function buildThreadMetaMarkup(thread) {
+  return `
+    <span>${escapeHtml(formatLineRange(thread.anchor))}</span>
+    <span class="status-pill${thread.status === "resolved" ? " resolved" : ""}">${getThreadStatusLabel(thread)}</span>
+    <span>${thread.messages.length} 条消息</span>
+    ${getAssistantBadge(thread)}
+  `;
+}
+
+function findMessageIndex(messages, predicate, startIndex = messages.length - 1) {
+  for (let index = Math.min(startIndex, messages.length - 1); index >= 0; index -= 1) {
+    if (predicate(messages[index], index)) return index;
+  }
+  return -1;
+}
+
+function isSidebarPreviewLikelyTruncated(message) {
+  const body = String(message?.body || "");
+  const lineBreakCount = (body.match(/\n/g) || []).length;
+  return body.length > 120 || lineBreakCount > 2;
+}
+
+function getSidebarPreviewMessages(thread) {
+  const messages = Array.isArray(thread?.messages) ? thread.messages : [];
+  if (!messages.length) return [];
+
+  const latestUserIndex = findMessageIndex(messages, (message) => message.role === "user");
+  if (latestUserIndex >= 0) {
+    const latestAssistantAfterUserIndex = findMessageIndex(
+      messages,
+      (message, index) => message.role === "assistant" && index > latestUserIndex
+    );
+    const previewMessages = [messages[latestUserIndex]];
+    if (latestAssistantAfterUserIndex >= 0) {
+      previewMessages.push(messages[latestAssistantAfterUserIndex]);
+    }
+    return previewMessages;
   }
 
-  const commentTrack = document.createElement("div");
-  commentTrack.className = "comment-track";
-  const positionedThreads = [...visibleThreads].sort(compareThreadsByAnchor);
+  const latestAssistantIndex = findMessageIndex(messages, (message) => message.role === "assistant");
+  if (latestAssistantIndex >= 0) {
+    return [messages[latestAssistantIndex]];
+  }
 
-  for (const thread of positionedThreads) {
-    const card = document.createElement("article");
-    card.className = "thread-card";
-    card.dataset.threadId = thread.id;
-    card.dataset.lineStart = String(thread.anchor?.lineStart || 1);
-    if (thread.id === state.activeCommentId) card.classList.add("active");
-    const isExpanded = thread.id === state.expandedCommentId;
-    if (isExpanded) card.classList.add("is-expanded");
-    if (isThreadPending(thread)) card.classList.add("pending");
+  return [messages.at(-1)];
+}
 
-    const header = document.createElement("div");
-    header.className = "thread-header";
+function buildSidebarPreviewState(thread) {
+  const previewMessages = getSidebarPreviewMessages(thread).filter(Boolean);
+  const previewIds = new Set(previewMessages.map((message) => message.id));
+  const hiddenCount = Math.max(0, thread.messages.length - previewIds.size);
+  const hasHiddenContent = hiddenCount > 0 || previewMessages.some(isSidebarPreviewLikelyTruncated);
+  return {
+    previewMessages,
+    hiddenCount,
+    hasHiddenContent,
+  };
+}
 
-    const meta = document.createElement("div");
-    meta.className = "thread-meta";
-    meta.innerHTML = `<span>${thread.messages.length} 条消息</span>`;
+function createThreadCard(thread, options = {}) {
+  const floating = Boolean(options.floating);
+  const isExpanded = floating || Boolean(options.isExpanded);
+  const sidebarPreview = floating ? null : buildSidebarPreviewState(thread);
+  const displayMessages = floating ? thread.messages : sidebarPreview.previewMessages;
 
-    const headerActions = document.createElement("div");
-    headerActions.className = "thread-header-actions";
+  const card = document.createElement("article");
+  card.className = `thread-card ${floating ? "is-floating" : "is-sidebar"}`;
+  card.dataset.threadId = thread.id;
+  card.dataset.lineStart = String(thread.anchor?.lineStart || 1);
+  if (!floating && thread.id === state.activeCommentId) card.classList.add("active");
+  if (isExpanded) card.classList.add("is-expanded");
+  if (isThreadPending(thread)) card.classList.add("pending");
+  if (!floating && sidebarPreview.hasHiddenContent) card.classList.add("has-hidden-content");
 
+  const header = document.createElement("div");
+  header.className = "thread-header";
+
+  const meta = document.createElement("div");
+  meta.className = "thread-meta";
+  meta.innerHTML = buildThreadMetaMarkup(thread);
+
+  const headerActions = document.createElement("div");
+  headerActions.className = "thread-header-actions";
+
+  if (floating) {
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "ghost";
+    closeBtn.textContent = "收起";
+    closeBtn.dataset.closeFloatingComment = "true";
+    closeBtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      closeFloatingComment();
+    });
+    headerActions.append(closeBtn);
+  } else {
     const toggleBtn = document.createElement("button");
     toggleBtn.type = "button";
     toggleBtn.className = "ghost";
-    toggleBtn.textContent = thread.status === "resolved" ? "重新打开" : "标记已解决";
+    toggleBtn.textContent = getThreadToggleLabel(thread);
     toggleBtn.addEventListener("click", async (event) => {
       event.stopPropagation();
       await toggleThreadStatus(thread.id);
@@ -2949,50 +3014,69 @@ function renderComments() {
     });
 
     headerActions.append(toggleBtn, deleteBtn);
-    header.append(meta, headerActions);
+  }
 
-    const messages = document.createElement("div");
-    messages.className = "thread-messages";
-    messages.dataset.threadId = thread.id;
-    for (const message of thread.messages) {
-      const item = document.createElement("div");
-      item.className = `message ${message.role === "assistant" ? "assistant" : "user"}`;
-      if (message.role === "assistant" && !isExpanded) item.classList.add("is-collapsed");
+  header.append(meta, headerActions);
+  card.appendChild(header);
 
-      const messageHeader = document.createElement("div");
-      messageHeader.className = "message-header";
+  if (floating) {
+    const quote = document.createElement("div");
+    quote.className = "quote-box";
+    quote.innerHTML = `
+      <div class="quote-label">原文定位</div>
+      <pre>${escapeHtml(thread.anchor.selectedText || "(空行批注)")}</pre>
+    `;
+    card.appendChild(quote);
+  }
 
-      const metaBlock = document.createElement("div");
-      metaBlock.textContent = `${message.author} · ${new Date(message.updatedAt || message.createdAt).toLocaleString()}`;
+  const messages = document.createElement("div");
+  messages.className = "thread-messages";
+  messages.dataset.threadId = thread.id;
+  for (const message of displayMessages) {
+    const item = document.createElement("div");
+    item.className = `message ${message.role === "assistant" ? "assistant" : "user"}`;
+    if (floating && message.role === "assistant" && !isExpanded) item.classList.add("is-collapsed");
 
-      messageHeader.append(metaBlock);
+    const messageHeader = document.createElement("div");
+    messageHeader.className = "message-header";
 
-      const body = document.createElement("div");
-      body.className = "message-body";
-      body.textContent = message.body;
-      body.contentEditable = message.role === "assistant" ? String(isExpanded) : "true";
-      body.spellcheck = false;
-      body.dataset.editable = body.contentEditable;
-      if (message.role === "assistant" && !isExpanded) {
-        body.setAttribute("aria-label", "助手回复已折叠，点击卡片展开后可编辑");
-      } else {
-        body.setAttribute("aria-label", "批注内容，可直接编辑");
+    const metaBlock = document.createElement("div");
+    metaBlock.textContent = `${message.author} · ${new Date(message.updatedAt || message.createdAt).toLocaleString()}`;
+
+    messageHeader.append(metaBlock);
+
+    const body = document.createElement("div");
+    body.className = "message-body";
+    body.textContent = message.body;
+    const editable = floating ? (message.role === "assistant" ? isExpanded : true) : false;
+    body.contentEditable = String(editable);
+    body.spellcheck = false;
+    body.dataset.editable = body.contentEditable;
+    if (!floating) {
+      body.setAttribute("aria-label", "批注摘要，点击后在悬浮卡片中查看完整内容");
+    } else if (message.role === "assistant" && !isExpanded) {
+      body.setAttribute("aria-label", "助手回复已折叠，点击后可在悬浮卡片中查看完整内容");
+    } else {
+      body.setAttribute("aria-label", "批注内容，可直接编辑");
+    }
+    body.addEventListener("click", (event) => {
+      if (!floating || (message.role === "assistant" && !isExpanded)) {
+        event.stopPropagation();
+        openFloatingComment(thread.id);
+        return;
       }
-      body.addEventListener("click", (event) => {
-        if (message.role === "assistant" && !isExpanded) {
-          event.stopPropagation();
-          state.expandedCommentId = thread.id;
-          renderComments();
-          return;
-        }
-        markLocalEditActivity();
+      markLocalEditActivity();
+      event.stopPropagation();
+    });
+    body.addEventListener("mousedown", (event) => {
+      if (!floating || (message.role === "assistant" && !isExpanded)) {
         event.stopPropagation();
-      });
-      body.addEventListener("mousedown", (event) => {
-        if (message.role === "assistant" && !isExpanded) return;
-        markLocalEditActivity();
-        event.stopPropagation();
-      });
+        return;
+      }
+      markLocalEditActivity();
+      event.stopPropagation();
+    });
+    if (editable) {
       body.addEventListener("focus", () => {
         markLocalEditActivity(2400);
       });
@@ -3025,44 +3109,154 @@ function renderComments() {
         clearInlineCommentSaveTimer();
         await persistComments("批注修改已自动保存。");
       });
-
-      item.append(messageHeader, body);
-      messages.appendChild(item);
     }
 
-    const actions = document.createElement("div");
-    actions.className = "thread-actions";
+    item.append(messageHeader, body);
+    messages.appendChild(item);
+  }
 
-    const requestBtn = document.createElement("button");
-    requestBtn.type = "button";
-    requestBtn.className = "secondary";
-    requestBtn.textContent = pendingAssistantRequests.has(thread.id)
-      ? "正在呼唤..."
-      : (ensureAssistantMeta(thread).assistantRequest.requested && !thread.assistantRequest.respondedAt
-          ? "处理中..."
-          : "呼唤智能体");
-    requestBtn.disabled = pendingAssistantRequests.has(thread.id)
-      || (ensureAssistantMeta(thread).assistantRequest.requested && !thread.assistantRequest.respondedAt);
-    requestBtn.addEventListener("click", async (event) => {
+  card.appendChild(messages);
+
+  if (!floating && sidebarPreview.hasHiddenContent) {
+    const historyHint = document.createElement("div");
+    historyHint.className = "thread-history-hint";
+    historyHint.setAttribute("aria-hidden", "true");
+    historyHint.innerHTML = "<span></span><span></span><span></span>";
+    card.appendChild(historyHint);
+  }
+
+  const actions = document.createElement("div");
+  actions.className = "thread-actions";
+
+  if (floating) {
+    const resolveBtn = document.createElement("button");
+    resolveBtn.type = "button";
+    resolveBtn.className = thread.status === "resolved" ? "ghost" : "secondary";
+    resolveBtn.textContent = getThreadToggleLabel(thread, { floating: true });
+    resolveBtn.addEventListener("click", async (event) => {
       event.stopPropagation();
-      await requestAssistantForThread(thread.id, "single");
+      await toggleThreadStatus(thread.id);
     });
+    actions.appendChild(resolveBtn);
+  }
 
-    const replyBtn = document.createElement("button");
-    replyBtn.type = "button";
-    replyBtn.className = "secondary";
-    replyBtn.textContent = "回复";
-    replyBtn.addEventListener("click", (event) => {
+  const requestBtn = document.createElement("button");
+  requestBtn.type = "button";
+  requestBtn.className = "secondary";
+  requestBtn.textContent = pendingAssistantRequests.has(thread.id)
+    ? "正在呼唤..."
+    : (ensureAssistantMeta(thread).assistantRequest.requested && !thread.assistantRequest.respondedAt
+        ? "处理中..."
+        : "呼唤智能体");
+  requestBtn.disabled = pendingAssistantRequests.has(thread.id)
+    || (ensureAssistantMeta(thread).assistantRequest.requested && !thread.assistantRequest.respondedAt);
+  requestBtn.addEventListener("click", async (event) => {
+    event.stopPropagation();
+    await requestAssistantForThread(thread.id, "single");
+  });
+
+  const replyBtn = document.createElement("button");
+  replyBtn.type = "button";
+  replyBtn.className = "secondary";
+  replyBtn.textContent = "回复";
+  replyBtn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    openReplyDialog(thread.id);
+  });
+
+  actions.append(requestBtn, replyBtn);
+  card.appendChild(actions);
+
+  if (floating) {
+    card.addEventListener("click", (event) => {
       event.stopPropagation();
-      openReplyDialog(thread.id);
     });
+  } else {
+    card.addEventListener("click", (event) => {
+      const target = event.target;
+      if (target instanceof HTMLElement && (target.closest("button") || target.closest(".message-body[contenteditable='true']"))) {
+        return;
+      }
+      openFloatingComment(thread.id);
+    });
+  }
 
-    actions.append(requestBtn, replyBtn);
-    card.append(header, messages, actions);
-    card.addEventListener("click", () => {
-      state.expandedCommentId = state.expandedCommentId === thread.id ? null : thread.id;
-      renderComments();
+  return { card, messages };
+}
+
+function closeFloatingComment() {
+  if (state.floatingCommentId) {
+    state.floatingCommentId = null;
+  }
+  renderFloatingComment();
+}
+
+function openFloatingComment(threadId) {
+  const thread = getThreadById(threadId);
+  if (!thread) return;
+  state.activeCommentId = threadId;
+  state.floatingCommentId = threadId;
+  renderFloatingComment();
+}
+
+function renderFloatingComment() {
+  if (!floatingCommentOverlay || !floatingCommentCardHost) return;
+  const thread = getThreadById(state.floatingCommentId);
+  if (!thread) {
+    floatingCommentCardHost.innerHTML = "";
+    floatingCommentOverlay.hidden = true;
+    return;
+  }
+  floatingCommentCardHost.innerHTML = "";
+  const { card, messages } = createThreadCard(thread, { floating: true, isExpanded: true });
+  floatingCommentCardHost.appendChild(card);
+  floatingCommentOverlay.hidden = false;
+  const savedScrollTop = commentMessageScrollState.get(thread.id);
+  if (typeof savedScrollTop === "number" && savedScrollTop > 0) {
+    window.requestAnimationFrame(() => {
+      messages.scrollTop = savedScrollTop;
     });
+  }
+}
+
+function renderComments() {
+  const nextScrollState = new Map();
+  captureThreadMessageScrollState(commentList, nextScrollState);
+  captureThreadMessageScrollState(floatingCommentCardHost, nextScrollState);
+  commentMessageScrollState = nextScrollState;
+  commentList.innerHTML = "";
+  const counts = getThreadCounts();
+  const visibleThreads = getVisibleThreads();
+
+  commentCount.textContent = visibleThreads.length === state.comments.length
+    ? `${state.comments.length} 个线程`
+    : `${visibleThreads.length} / ${state.comments.length} 个线程`;
+  if (reviewStateInfo) {
+    reviewStateInfo.textContent = formatReviewState(state.reviewState);
+  }
+  if (requestAllBtn) requestAllBtn.disabled = counts.unresolved === 0;
+  if (copyPendingBtn) copyPendingBtn.disabled = counts.pending === 0;
+  showResolvedBtn.textContent = `展开所有标注 (${state.comments.length})`;
+  hideResolvedBtn.textContent = `隐藏已解决批注 (${counts.resolved})`;
+  updateResolvedVisibilityButtons();
+
+  if (!visibleThreads.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = state.comments.length
+      ? (state.showResolvedThreads ? "当前筛选条件下没有线程。" : "当前没有可见线程。已解决批注已隐藏，可点“展开所有标注”查看历史。")
+      : "还没有批注线程。先在编辑器里选中文字，再点“批注当前选区”。";
+    commentList.appendChild(empty);
+    renderFloatingComment();
+    return;
+  }
+
+  const commentTrack = document.createElement("div");
+  commentTrack.className = "comment-track";
+  const positionedThreads = [...visibleThreads].sort(compareThreadsByAnchor);
+
+  for (const thread of positionedThreads) {
+    const { card, messages } = createThreadCard(thread, { isExpanded: false, floating: false });
     commentTrack.appendChild(card);
     const savedScrollTop = commentMessageScrollState.get(thread.id);
     if (typeof savedScrollTop === "number" && savedScrollTop > 0) {
@@ -3074,6 +3268,7 @@ function renderComments() {
 
   commentList.appendChild(commentTrack);
   scheduleCommentLayout();
+  renderFloatingComment();
 }
 
 function findScrollableElement(startNode) {
@@ -4941,6 +5136,9 @@ async function deleteThread(threadId) {
   if (state.activeCommentId === threadId) {
     state.activeCommentId = null;
   }
+  if (state.floatingCommentId === threadId) {
+    state.floatingCommentId = null;
+  }
   renderComments();
   await persistComments("批注线程已删除并自动保存。");
 }
@@ -5739,6 +5937,10 @@ window.addEventListener("resize", () => {
 });
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
+    if (state.floatingCommentId) {
+      closeFloatingComment();
+      return;
+    }
     hideToolbarMenus();
   }
   handleEditorDeleteKey(event);
@@ -5776,6 +5978,13 @@ mathOverlayLayer?.addEventListener("click", (event) => {
   event.preventDefault();
   event.stopPropagation();
   openFormulaDialogFromOverlay(overlay);
+});
+floatingCommentOverlay?.addEventListener("click", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+  if (target === floatingCommentOverlay || target.dataset.closeFloatingComment === "true" || target.closest("[data-close-floating-comment='true']")) {
+    closeFloatingComment();
+  }
 });
 
 const initialPath = getPathFromUrl();

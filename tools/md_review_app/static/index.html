@@ -138,6 +138,12 @@
 
     <input id="imageUploadInput" type="file" accept="image/*" hidden />
     <div id="printExportRoot" class="print-export-root" aria-hidden="true"></div>
+    <div id="floatingCommentOverlay" class="comment-floating-overlay" hidden>
+      <div class="comment-floating-backdrop" data-close-floating-comment="true"></div>
+      <div class="comment-floating-shell" role="dialog" aria-modal="true" aria-label="悬浮批注线程">
+        <div id="floatingCommentCardHost" class="comment-floating-card-host"></div>
+      </div>
+    </div>
     <div id="editorContextMenu" class="editor-context-menu" hidden>
       <button id="contextInsertImageBtn" class="ghost" type="button">在此插入图片</button>
       <button id="contextInsertFormulaBtn" class="ghost" type="button">在此插入公式</button>
