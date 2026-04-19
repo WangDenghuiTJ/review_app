@@ -29,7 +29,7 @@ $readmePath = Join-Path $releaseDir "START_HERE.txt"
 DocPilot Windows 绿色版
 
 1. 如果你是第一次使用，请先运行：
-   windows\Install-ReviewApp.ps1
+   windows\Install-ReviewApp-Compat.ps1
 
 2. 安装后你可以：
    - 双击 .docpilot / .reflow / .flow 文件直接打开

@@ -8,6 +8,7 @@ import mimetypes
 import os
 import posixpath
 import re
+import shutil
 import subprocess
 import tempfile
 import threading
@@ -465,12 +466,25 @@ def _build_single_thread_prompt(md_path: Path, markdown: str, context_text: str,
     )
 
 
+def _resolve_codex_command() -> str:
+    if os.name == "nt":
+        for candidate in ("codex.cmd", "codex.bat", "codex.exe", "codex"):
+            resolved = shutil.which(candidate)
+            if resolved:
+                return resolved
+    resolved = shutil.which("codex")
+    if resolved:
+        return resolved
+    raise RuntimeError("Unable to locate `codex` on PATH.")
+
+
 def _run_codex_exec(prompt: str, md_path: Path) -> str:
     with tempfile.NamedTemporaryFile(prefix="review-app-codex-", suffix=".txt", delete=False) as handle:
         output_path = Path(handle.name)
     command = [
-        "codex",
+        _resolve_codex_command(),
         "exec",
+        "--ephemeral",
         "--skip-git-repo-check",
         "--sandbox",
         "workspace-write",
@@ -487,12 +501,17 @@ def _run_codex_exec(prompt: str, md_path: Path) -> str:
             command,
             input=prompt,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             capture_output=True,
             timeout=CODEX_EXEC_TIMEOUT_SECONDS,
             check=False,
         )
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError(f"Codex 调用超时（>{CODEX_EXEC_TIMEOUT_SECONDS}s）。") from exc
+
+    except OSError as exc:
+        raise RuntimeError(f"Codex failed to start: {exc}") from exc
 
     output_text = output_path.read_text(encoding="utf-8").strip() if output_path.exists() else ""
     if output_path.exists():

@@ -34,7 +34,7 @@
 智能体实际需要执行的关键命令通常只有：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\windows\Install-ReviewApp.ps1
+powershell -ExecutionPolicy Bypass -File .\windows\Install-ReviewApp-Compat.ps1
 ```
 
 如果用户后面移动了软件目录，或者双击打开失效，直接再执行同一条命令即可修复。
@@ -78,7 +78,7 @@ cd C:\Tools\md_review_app\windows
 执行：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\Install-ReviewApp.ps1
+powershell -ExecutionPolicy Bypass -File .\Install-ReviewApp-Compat.ps1
 ```
 
 这个脚本会完成 3 件事：
@@ -168,7 +168,7 @@ powershell -ExecutionPolicy Bypass -File .\Install-ReviewApp.ps1
 这时只需要重新执行一次：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\Install-ReviewApp.ps1
+powershell -ExecutionPolicy Bypass -File .\Install-ReviewApp-Compat.ps1
 ```
 
 即可修复文件关联和右键新建菜单。
@@ -229,3 +229,6 @@ powershell -ExecutionPolicy Bypass -File .\windows\Build-Windows-Portable.ps1
 - `dist/docpilot_windows_portable.zip`
 
 其中 zip 包就是可以直接上传到 GitHub Releases 或仓库附件里的绿色版发布包。
+> Windows note:
+> Prefer `Install-ReviewApp-Compat.ps1` on Windows PowerShell 5.1.
+> If `New -> DocPilot Document` does not appear immediately after install, restart Explorer once and test again.

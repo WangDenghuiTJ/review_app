@@ -46,14 +46,19 @@ python .\tools\md_review_app\server.py --workspace C:\Docs\Review --default-md s
 - `windows/ReviewApp.ps1`
 - `windows/ReviewApp.cmd`
 - `windows/Install-ReviewApp.ps1`
+- `windows/Install-ReviewApp-Compat.ps1`
 - `windows/Uninstall-ReviewApp.ps1`
 - `windows/Build-Windows-Portable.ps1`
 
 首次安装或修复关联，执行：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\md_review_app\windows\Install-ReviewApp.ps1
+powershell -ExecutionPolicy Bypass -File .\tools\md_review_app\windows\Install-ReviewApp-Compat.ps1
 ```
+
+Windows note:
+- Prefer `Install-ReviewApp-Compat.ps1` on Windows PowerShell 5.1.
+- If `New -> DocPilot Document` does not appear immediately after install, restart Explorer once and test again.
 
 这一步会完成：
 
@@ -78,6 +83,8 @@ powershell -ExecutionPolicy Bypass -File .\tools\md_review_app\windows\Build-Win
 
 - `dist/docpilot_windows_portable/`
 - `dist/docpilot_windows_portable.zip`
+
+See [WINDOWS_PORTABLE_INSTALL.md](./WINDOWS_PORTABLE_INSTALL.md) for the detailed Windows install guide.
 
 更详细的 Windows 安装说明见 [WINDOWS_PORTABLE_INSTALL.md](/home/wangdh/review_app/tools/md_review_app/WINDOWS_PORTABLE_INSTALL.md)。
 
