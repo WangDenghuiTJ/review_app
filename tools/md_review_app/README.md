@@ -59,6 +59,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\md_review_app\windows\Install-R
 Windows note:
 - Prefer `Install-ReviewApp-Compat.ps1` on Windows PowerShell 5.1.
 - If `New -> DocPilot Document` does not appear immediately after install, restart Explorer once and test again.
+- The portable launcher now defaults to `--idle-timeout 0`, so the local server stays open until you close it. Pass `--idle-timeout <seconds>` only if you want auto-shutdown.
 
 这一步会完成：
 

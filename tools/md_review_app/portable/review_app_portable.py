@@ -79,14 +79,24 @@ def _repack_package(source_package: Path, temp_root: Path, main_document: str) -
     pack_document_bundle(md_path, source_package)
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Portable launcher for DocPilot on Windows.")
     parser.add_argument("target", nargs="?", help="Optional .md or package file to open.")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
-    parser.add_argument("--idle-timeout", type=int, default=120)
+    parser.add_argument(
+        "--idle-timeout",
+        type=int,
+        default=0,
+        help="Seconds of inactivity before the local server exits. Use 0 to disable auto-shutdown.",
+    )
     parser.add_argument("--no-browser", action="store_true")
-    args = parser.parse_args()
+    return parser
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = build_parser()
+    args = parser.parse_args(argv)
 
     target = Path(args.target).resolve() if args.target else None
     workspace_root, default_md, source_package, temp_root = _prepare_workspace(target)
